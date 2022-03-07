@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 
 from deepfm import DeepFM
 
+torch.manual_seed(2022)
 data = pd.read_csv('./temp_data.csv').reset_index(drop=True)
 
 category_cols = ['CODE_GENDER', 'FLAG_OWN_CAR', 'FLAG_OWN_REALTY']
