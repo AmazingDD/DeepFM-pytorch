@@ -9,6 +9,7 @@ class DeepFM(nn.Module):
     def __init__(self, args) -> None:
         super(DeepFM, self).__init__()
         os.environ['CUDA_VISIBLE_DEVICES'] = args['gpuid']
+        torch.manual_seed(2022)
 
         self.lr = args['lr']
         self.l2_reg = args['l2_reg']
@@ -147,7 +148,7 @@ class DeepFM(nn.Module):
                 pass
 
     def predict(self, test_loader):
-        self.eval()
+        self.eval() # when setting this, the sigmoid will directly output 0/1 tag, or it will output sigmoid score
         _, idxs, vals = next(iter(test_loader))
         idxs = idxs.to(self.device)
         vals = vals.to(self.device)
