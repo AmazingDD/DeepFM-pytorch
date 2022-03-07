@@ -1,8 +1,9 @@
+from multiprocessing.sharedctypes import Value
 import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm
+import numpy as np
 
 class DeepFM(nn.Module):
     def __init__(self, args) -> None:
@@ -22,7 +23,13 @@ class DeepFM(nn.Module):
         self.deep_neurons = args['dense_size']
         self.early_stop = True
         self.device = 'gpu' if torch.cuda.is_available() else 'cpu'
+        self.batch_norm = args['batch_norm']
+        self.opt = args['opt_name']
 
+        if args['deep_layer_act'] == 'relu':
+            self.deep_layer_act = nn.ReLU()
+        else:
+            raise ValueError('Invalid activation function name for deep layers')
 
         self.dropout_fm_1o = nn.Dropout(p=args['1o_dropout_p'])
         self.dropout_fm_2o = nn.Dropout(p=args['2o_dropout_p'])
@@ -31,14 +38,29 @@ class DeepFM(nn.Module):
         layers_size = [self.num_fetures * self.emb_dim] + [self.deep_neurons] * self.num_layers
         for i in range(1, len(layers_size)):
             deep_modules.append(nn.Linear(layers_size[i - 1], layers_size[i]))
+            if self.batch_norm:
+                deep_modules.append(nn.BatchNorm1d(num_features=self.deep_neurons))
+            deep_modules.append(self.deep_layer_act)
             deep_modules.append(nn.Dropout(p=args['deep_dropout_p']))
         self.deep = nn.Sequential(*deep_modules)
 
         self.output = nn.Linear(self.deep_neurons + self.num_fetures + self.emb_dim, 1, bias=False) # concat projection
 
     def _init_weights(self):
-        nn.init.normal_(self.feature_embs, std=0.01)
-        nn.init.uniform_(self.feature_bias, 0, 1)
+        nn.init.normal_(self.feature_embs.weight, std=0.01)
+        nn.init.uniform_(self.feature_bias.weight, 0, 1)
+
+        glorot = np.sqrt(2.0 / (self.num_fetures * self.emb_dim + self.deep_neurons))
+
+        for la in self.deep:
+            if la is nn.Linear:
+                nn.init.normal_(la.weight, std=glorot)
+                nn.init.constant_(la.bias, 0.)
+                glorot = np.sqrt(2.0 / (self.deep_neurons + self.deep_neurons))
+
+        glorot = np.sqrt(2.0 / (self.deep_neurons + self.num_fetures + self.emb_dim + 1))
+        nn.init.normal_(self.output.weight, std=glorot)
+        nn.init.constant_(self.output.bias, 0.01)
 
     def forward(self, idxs, vals): # idx/vals: batchsize * feature_size
         feat_emb = self.feature_embs(idxs)  # batch_size * feature_size * embedding_size
@@ -70,17 +92,24 @@ class DeepFM(nn.Module):
             self.cuda()
         else:
             self.cpu()
-        optimizer = optim.Adam(self.parameters(), lr=self.lr,)
-        criterion = nn.BCEWithLogitsLoss(reduction='sum')
+        if self.opt == 'adam':
+            optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        elif self.opt == 'adagrad':
+            optimizer = optim.Adagrad(self.parameters(), lr=self.lr)
+        elif self.opt == 'sgd':
+            optimizer = optim.SGD(self.parameters(), lr=self.lr)
+        else:
+            raise ValueError(f'Invalid optimizer name: {self.opt}')
+
+        criterion = nn.BCEWithLogitsLoss(reduction='sum') # CE_log_loss for binary classification
         
         last_loss = 0.
         for epoch in range(1, self.epochs + 1):
             self.train()
             current_loss = 0.
-            
-            pbar = tqdm(train_loader)
-            pbar.set_description(f'[Epoch {epoch:03d}]')
-            for labels, idxs, vals in pbar:
+            total_sample_num = 0
+            for labels, idxs, vals in train_loader:
+                total_sample_num += labels.size()[0]
                 if torch.cuda.is_available():
                     labels = labels.cuda()
                     idxs = idxs.cuda()
@@ -102,9 +131,9 @@ class DeepFM(nn.Module):
                 
                 loss.backward()
                 optimizer.step()
-                pbar.set_postfix(loss=loss.item())
                 current_loss += loss.item()
 
+            print(f'[Epoch {epoch:03d}] - training loss={current_loss / total_sample_num:.4f}')
             delta_loss = float(current_loss - last_loss)
             if (abs(delta_loss) < 1e-5) and self.early_stop:
                 print('Satisfy early stop mechanism')

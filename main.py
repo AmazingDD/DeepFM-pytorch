@@ -63,16 +63,19 @@ args = {
     'batch_size': 256,
     'gpuid': '0',
     'lr': 0.001,
-    'l2_reg': 0.001,
+    'l2_reg': 0.,
     'epochs': 10,
     'num_features': len(feat_cols),
     'embedding_dim': 8,
     'field_size': fields_size,
     'num_layers': 2,
     'dense_size': 32,
-    '1o_dropout_p': 0.1, 
-    '2o_dropout_p': 0.1, 
-    'deep_dropout_p': 0.5
+    '1o_dropout_p': 1., 
+    '2o_dropout_p': 1., 
+    'deep_dropout_p': 0.5,
+    'batch_norm': True,
+    'deep_layer_act': 'relu',
+    'opt_name': 'adam'
 }
 
 train_data, test_data = train_test_split(data, test_size=0.2)
