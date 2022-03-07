@@ -2,7 +2,7 @@
 re-implementation of DeepFM with pytorch 1.0
 
 # Usage
-## Input Format for `model.fit()`
+## Input Format for fit method in model
 This implementation requires model to receive data batches in the following format:
 - [ ] **label**: target of each sample in the dataset (1/0 for classification)
 - [ ] **idxs**: *[[ind1_1, ind1_2, ...], [ind2_1, ind2_2, ...], ..., [indi_1, indi_2, ..., indi_j, ...], ...]*
