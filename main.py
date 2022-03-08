@@ -83,7 +83,7 @@ train_data, test_data = train_test_split(data, test_size=0.2)
 train_data, test_data = train_data.reset_index(drop=True), test_data.reset_index(drop=True)
 
 train_dataset = FMDataset(train_data, feat_start_idx, fields_size, feat_cols, target_col)
-train_loader = DataLoader(train_dataset, batch_size=args['batch_size'])
+train_loader = DataLoader(train_dataset, batch_size=args['batch_size'], shuffle=True)
 
 test_dataset = FMDataset(test_data, feat_start_idx, fields_size, feat_cols, target_col)
 test_loader = DataLoader(test_dataset, batch_size=len(test_dataset))
