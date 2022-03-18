@@ -126,7 +126,7 @@ class DeepFM(nn.Module):
                 loss = criterion(prediction, labels)
                 loss += self.l2_reg * self.output.weight.norm()
                 for la in self.deep:
-                    if la is nn.Linear:
+                    if isinstance(la, nn.Linear):
                         loss += self.l2_reg * la.weight.norm()
                 if torch.isnan(loss):
                     raise ValueError(f'Loss=Nan or Infinity: current settings does not fit the recommender')
