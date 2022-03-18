@@ -5,11 +5,12 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
+torch.random.manual_seed(2022)
+
 class DeepFM(nn.Module):
     def __init__(self, args) -> None:
         super(DeepFM, self).__init__()
         os.environ['CUDA_VISIBLE_DEVICES'] = args['gpuid']
-        torch.manual_seed(2022)
 
         self.lr = args['lr']
         self.l2_reg = args['l2_reg']
@@ -20,10 +21,10 @@ class DeepFM(nn.Module):
         self.feature_embs = nn.Embedding(sum(args['field_size']), args['embedding_dim'])
         self.bias_embs = nn.Embedding(sum(args['field_size']), 1)
 
-        self.num_layers = args['num_layers'] # 2
+        # self.num_layers = args['num_layers'] # 2
         self.deep_neurons = args['dense_size']
         self.early_stop = True
-        self.device = 'gpu' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.batch_norm = args['batch_norm']
         self.opt = args['opt_name']
 
@@ -36,32 +37,32 @@ class DeepFM(nn.Module):
         self.dropout_fm_2o = nn.Dropout(p=args['2o_dropout_p'])
 
         deep_modules = []
-        layers_size = [self.num_fetures * self.emb_dim] + [self.deep_neurons] * self.num_layers
-        for i in range(1, len(layers_size)):
-            deep_modules.append(nn.Linear(layers_size[i - 1], layers_size[i]))
+        layers_size = [self.num_fetures * self.emb_dim] + args['dense_size']
+        for in_size, out_size in zip(layers_size[:-1], layers_size[1:]):
+            deep_modules.append(nn.Linear(in_size, out_size))
             if self.batch_norm:
-                deep_modules.append(nn.BatchNorm1d(num_features=self.deep_neurons))
+                deep_modules.append(nn.BatchNorm1d(num_features=out_size))
             deep_modules.append(self.deep_layer_act)
             deep_modules.append(nn.Dropout(p=args['deep_dropout_p']))
         self.deep = nn.Sequential(*deep_modules)
 
-        self.output = nn.Linear(self.deep_neurons + self.num_fetures + self.emb_dim, 1, bias=False) # concat projection
+        self.output = nn.Linear(args['dense_size'][-1] + self.num_fetures + self.emb_dim, 1, bias=False) # concat projection
+
+        self._init_weights()
 
     def _init_weights(self):
         nn.init.normal_(self.feature_embs.weight, std=0.01)
-        nn.init.uniform_(self.feature_bias.weight, 0, 1)
 
-        glorot = np.sqrt(2.0 / (self.num_fetures * self.emb_dim + self.deep_neurons))
+        glorot = np.sqrt(2.0 / (self.num_fetures * self.emb_dim + self.deep_neurons[0]))
 
         for la in self.deep:
-            if la is nn.Linear:
+            if isinstance(la, nn.Linear):
                 nn.init.normal_(la.weight, std=glorot)
                 nn.init.constant_(la.bias, 0.)
-                glorot = np.sqrt(2.0 / (self.deep_neurons + self.deep_neurons))
+                glorot = np.sqrt(2.0 / (la.weight.size()[0] + la.weight.size()[1]))
 
-        glorot = np.sqrt(2.0 / (self.deep_neurons + self.num_fetures + self.emb_dim + 1))
+        glorot = np.sqrt(2.0 / (self.deep_neurons[-1] + self.num_fetures + self.emb_dim + 1))
         nn.init.normal_(self.output.weight, std=glorot)
-        nn.init.constant_(self.output.bias, 0.01)
 
     def forward(self, idxs, vals): # idx/vals: batchsize * feature_size
         feat_emb = self.feature_embs(idxs)  # batch_size * feature_size * embedding_size
@@ -148,11 +149,10 @@ class DeepFM(nn.Module):
                 pass
 
     def predict(self, test_loader):
-        self.eval() # when setting this, the sigmoid will directly output 0/1 tag, or it will output sigmoid score
+        self.eval()
         _, idxs, vals = next(iter(test_loader))
         idxs = idxs.to(self.device)
         vals = vals.to(self.device)
         preds = self.forward(idxs, vals).cpu().detach()
 
         return preds
-
